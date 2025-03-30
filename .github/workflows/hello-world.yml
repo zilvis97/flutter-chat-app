@@ -9,12 +9,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - run: echo "Hello, world !"
   test:
     needs: hello-world-job
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - run: flutter pub get
       - run: flutter test
