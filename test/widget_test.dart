@@ -7,6 +7,6 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SplashScreen()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Loading'), findsOne);
+    expect(find.text('Loading...'), findsOne);
   });
 }
