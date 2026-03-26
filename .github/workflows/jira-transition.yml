@@ -133,7 +133,7 @@ jobs:
             "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/$ISSUE_KEY/transitions")
 
           TRANSITION_ID=$(echo "$RESPONSE" | \
-            jq -r '.transitions[] | select(.name | ascii_downcase == "code review") | .id')
+            jq -r '.transitions[] | select(.name | ascii_downcase == "pr submitted") | .id')
 
           if [ -z "$TRANSITION_ID" ]; then
             echo "Transition 'Code Review' not found. Available transitions:"
