@@ -41,7 +41,7 @@ jobs:
             echo "Processing $ISSUE_KEY..."
 
             RESPONSE=$(curl -s \
-              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
               "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
 
@@ -55,7 +55,7 @@ jobs:
             fi
 
             curl -s -o /dev/null -w "%{http_code}" \
-              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
               -X POST \
               -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
@@ -78,7 +78,7 @@ jobs:
 
             # Get current status
             STATUS_RESPONSE=$(curl -s \
-              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
               "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY?fields=status")
 
@@ -90,7 +90,7 @@ jobs:
 
             if [ "$CURRENT_STATUS" != "in progress" ]; then
               RESPONSE=$(curl -s \
-                -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
+                -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
                 -H "Content-Type: application/json" \
                 "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
 
@@ -106,7 +106,7 @@ jobs:
               fi
 
               curl -s -o /dev/null -w "%{http_code}" \
-                -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
+                -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
                 -H "Content-Type: application/json" \
                 -X POST \
                 -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
@@ -118,7 +118,7 @@ jobs:
             fi
 
             RESPONSE=$(curl -s \
-              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
               "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
 
@@ -134,7 +134,7 @@ jobs:
             fi
 
             curl -s -o /dev/null -w "%{http_code}" \
-              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
               -X POST \
               -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
