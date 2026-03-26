@@ -27,7 +27,7 @@ jobs:
           echo "Found issue key: $ISSUE_KEY"
           echo "issue_key=$ISSUE_KEY" >> $GITHUB_OUTPUT
 
-      - name: Get transition ID for 'Pending Later Redeployment'
+      - name: Get transition ID for 'Pending Later Deployment'
         id: get_transition
         if: steps.jira.outputs.issue_key != ''
         run: |
@@ -37,10 +37,10 @@ jobs:
             "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/${{ steps.jira.outputs.issue_key }}/transitions")
 
           TRANSITION_ID=$(echo "$RESPONSE" | \
-            jq -r '.transitions[] | select(.name | ascii_downcase == "pending later redeployment") | .id')
+            jq -r '.transitions[] | select(.name | ascii_downcase == "pending later deployment") | .id')
 
           if [ -z "$TRANSITION_ID" ]; then
-            echo "Transition 'Pending Later Redeployment' not found. Available transitions:"
+            echo "Transition 'Pending Later Deployment' not found. Available transitions:"
             echo "$RESPONSE" | jq '[.transitions[] | {id, name}]'
             exit 1
           fi
