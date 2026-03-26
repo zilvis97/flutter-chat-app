@@ -77,22 +77,27 @@ jobs:
             echo "Processing $ISSUE_KEY..."
 
             # Get current status
-            CURRENT_STATUS=$(curl -s \
+            STATUS_RESPONSE=$(curl -s \
               -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
-              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY?fields=status" \
-              | jq -r '.fields.status.name | ascii_downcase')
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY?fields=status")
+
+            echo "Status response: $STATUS_RESPONSE"
+
+            CURRENT_STATUS=$(echo "$STATUS_RESPONSE" | jq -r '(.fields.status.name // "") | ascii_downcase')
 
             echo "Current status: $CURRENT_STATUS"
 
             if [ "$CURRENT_STATUS" != "in progress" ]; then
               RESPONSE=$(curl -s \
-                -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+                -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
                 -H "Content-Type: application/json" \
-                "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/$ISSUE_KEY/transitions")
+                "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
+
+              echo "Transitions response: $RESPONSE"
 
               TRANSITION_ID=$(echo "$RESPONSE" | \
-                jq -r '.transitions[] | select(.name | ascii_downcase == "in progress") | .id')
+                jq -r '.transitions[] | select((.name // "") | ascii_downcase == "in progress") | .id')
 
               if [ -z "$TRANSITION_ID" ]; then
                 echo "Transition 'In Progress' not found for $ISSUE_KEY. Available transitions:"
@@ -101,7 +106,7 @@ jobs:
               fi
 
               curl -s -o /dev/null -w "%{http_code}" \
-                -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+                -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
                 -H "Content-Type: application/json" \
                 -X POST \
                 -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
@@ -117,8 +122,10 @@ jobs:
               -H "Content-Type: application/json" \
               "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
 
+            echo "Transitions response: $RESPONSE"
+
             TRANSITION_ID=$(echo "$RESPONSE" | \
-              jq -r '.transitions[] | select(.name | ascii_downcase == "pr submitted") | .id')
+              jq -r '.transitions[] | select((.name // "") | ascii_downcase == "pr submitted") | .id')
 
             if [ -z "$TRANSITION_ID" ]; then
               echo "Transition 'PR Submitted' not found for $ISSUE_KEY. Available transitions:"
