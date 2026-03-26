@@ -1,0 +1,59 @@
+name: JIRA - Move to Pending Redeployment
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - 'release/**'
+
+jobs:
+  transition-jira:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Extract JIRA issue key
+        id: jira
+        run: |
+          # Looks for a JIRA key (e.g. PROJ-123) in the PR title or branch name
+          TEXT="${{ github.event.pull_request.title }} ${{ github.event.pull_request.head.ref }}"
+          ISSUE_KEY=$(echo "$TEXT" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+
+          if [ -z "$ISSUE_KEY" ]; then
+            echo "No JIRA issue key found in PR title or branch name. Skipping."
+            exit 0
+          fi
+
+          echo "Found issue key: $ISSUE_KEY"
+          echo "issue_key=$ISSUE_KEY" >> $GITHUB_OUTPUT
+
+      - name: Get transition ID for 'Pending Later Redeployment'
+        id: get_transition
+        if: steps.jira.outputs.issue_key != ''
+        run: |
+          RESPONSE=$(curl -s \
+            -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/${{ steps.jira.outputs.issue_key }}/transitions")
+
+          TRANSITION_ID=$(echo "$RESPONSE" | \
+            jq -r '.transitions[] | select(.name | ascii_downcase == "pending later redeployment") | .id')
+
+          if [ -z "$TRANSITION_ID" ]; then
+            echo "Transition 'Pending Later Redeployment' not found. Available transitions:"
+            echo "$RESPONSE" | jq '[.transitions[] | {id, name}]'
+            exit 1
+          fi
+
+          echo "transition_id=$TRANSITION_ID" >> $GITHUB_OUTPUT
+
+      - name: Transition JIRA issue
+        if: steps.jira.outputs.issue_key != '' && steps.get_transition.outputs.transition_id != ''
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d "{\"transition\": {\"id\": \"${{ steps.get_transition.outputs.transition_id }}\"}}" \
+            "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/${{ steps.jira.outputs.issue_key }}/transitions" \
+          | grep -qE '^2' && echo "Successfully transitioned ${{ steps.jira.outputs.issue_key }}" || exit 1
