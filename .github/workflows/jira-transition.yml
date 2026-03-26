@@ -16,13 +16,15 @@ jobs:
         run: |
           # Looks for all JIRA keys (e.g. PROJ-123) in the PR title and branch name
           TEXT="${{ github.event.pull_request.title }} ${{ github.event.pull_request.head.ref }}"
-          ISSUE_KEYS=$(echo "$TEXT" | grep -oE '[A-Z]+-[0-9]+' | sort -u | jq -Rsc 'split("\n") | map(select(length > 0))')
+          MATCHES=$(echo "$TEXT" | grep -oE '[A-Z]+-[0-9]+' | sort -u || true)
 
-          if [ "$ISSUE_KEYS" = "[]" ]; then
+          if [ -z "$MATCHES" ]; then
             echo "No JIRA issue keys found in PR title or branch name. Skipping."
             echo "issue_keys=[]" >> $GITHUB_OUTPUT
             exit 0
           fi
+
+          ISSUE_KEYS=$(echo "$MATCHES" | jq -Rsc 'split("\n") | map(select(length > 0))')
 
           echo "Found issue keys: $ISSUE_KEYS"
           echo "issue_keys=$ISSUE_KEYS" >> $GITHUB_OUTPUT
