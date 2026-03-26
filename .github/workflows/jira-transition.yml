@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Transition issues to 'In Progress' if needed, then 'PR Submitted'
+      - name: Transition issues to 'In Progress' if needed, then 'PR Submitted' ('Code Review' equivalent)
         run: |
           ISSUE_KEYS='${{ needs.extract-jira-keys.outputs.issue_keys }}'
 
@@ -82,19 +82,13 @@ jobs:
               -H "Content-Type: application/json" \
               "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY?fields=status")
 
-            echo "Status response: $STATUS_RESPONSE"
-
             CURRENT_STATUS=$(echo "$STATUS_RESPONSE" | jq -r '(.fields.status.name // "") | ascii_downcase')
-
-            echo "Current status: $CURRENT_STATUS"
 
             if [ "$CURRENT_STATUS" != "in progress" ]; then
               RESPONSE=$(curl -s \
                 -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
                 -H "Content-Type: application/json" \
                 "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
-
-              echo "Transitions response: $RESPONSE"
 
               TRANSITION_ID=$(echo "$RESPONSE" | \
                 jq -r '.transitions[] | select((.name // "") | ascii_downcase == "in progress") | .id')
@@ -121,8 +115,6 @@ jobs:
               -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
               "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
-
-            echo "Transitions response: $RESPONSE"
 
             TRANSITION_ID=$(echo "$RESPONSE" | \
               jq -r '.transitions[] | select((.name // "") | ascii_downcase == "pr submitted") | .id')
