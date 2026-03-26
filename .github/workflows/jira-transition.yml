@@ -5,9 +5,10 @@ on:
     types: [closed, opened]
 
 jobs:
-  transition-to-pending-later-deployment:
-    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.base.ref, 'release/')
+  extract-jira-key:
     runs-on: ubuntu-latest
+    outputs:
+      issue_key: ${{ steps.jira.outputs.issue_key }}
 
     steps:
       - name: Extract JIRA issue key
@@ -25,14 +26,19 @@ jobs:
           echo "Found issue key: $ISSUE_KEY"
           echo "issue_key=$ISSUE_KEY" >> $GITHUB_OUTPUT
 
+  transition-to-pending-later-deployment:
+    needs: extract-jira-key
+    if: github.event.pull_request.merged == true && needs.extract-jira-key.outputs.issue_key != ''
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Get transition ID for 'Pending Later Deployment'
         id: get_transition
-        if: steps.jira.outputs.issue_key != ''
         run: |
           RESPONSE=$(curl -s \
             -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/${{ steps.jira.outputs.issue_key }}/transitions")
+            "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/${{ needs.extract-jira-key.outputs.issue_key }}/transitions")
 
           TRANSITION_ID=$(echo "$RESPONSE" | \
             jq -r '.transitions[] | select(.name | ascii_downcase == "pending later deployment") | .id')
@@ -46,40 +52,25 @@ jobs:
           echo "transition_id=$TRANSITION_ID" >> $GITHUB_OUTPUT
 
       - name: Transition JIRA issue
-        if: steps.jira.outputs.issue_key != '' && steps.get_transition.outputs.transition_id != ''
         run: |
           curl -s -o /dev/null -w "%{http_code}" \
             -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
             -H "Content-Type: application/json" \
             -X POST \
             -d "{\"transition\": {\"id\": \"${{ steps.get_transition.outputs.transition_id }}\"}}" \
-            "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/${{ steps.jira.outputs.issue_key }}/transitions" \
-          | grep -qE '^2' && echo "Successfully transitioned ${{ steps.jira.outputs.issue_key }}" || exit 1
+            "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/${{ needs.extract-jira-key.outputs.issue_key }}/transitions" \
+          | grep -qE '^2' && echo "Successfully transitioned ${{ needs.extract-jira-key.outputs.issue_key }}" || exit 1
 
   transition-to-code-review:
-    if: github.event.action == 'opened'
+    needs: extract-jira-key
+    if: github.event.action == 'opened' && needs.extract-jira-key.outputs.issue_key != ''
     runs-on: ubuntu-latest
 
     steps:
-      - name: Extract JIRA issue key
-        id: jira
-        run: |
-          TEXT="${{ github.event.pull_request.title }} ${{ github.event.pull_request.head.ref }}"
-          ISSUE_KEY=$(echo "$TEXT" | grep -oE '[A-Z]+-[0-9]+' | head -1)
-
-          if [ -z "$ISSUE_KEY" ]; then
-            echo "No JIRA issue key found in PR title or branch name. Skipping."
-            exit 0
-          fi
-
-          echo "Found issue key: $ISSUE_KEY"
-          echo "issue_key=$ISSUE_KEY" >> $GITHUB_OUTPUT
-
       - name: Check current status and transition to 'In Progress' if needed
         id: in_progress
-        if: steps.jira.outputs.issue_key != ''
         run: |
-          ISSUE_KEY="${{ steps.jira.outputs.issue_key }}"
+          ISSUE_KEY="${{ needs.extract-jira-key.outputs.issue_key }}"
 
           # Get current status
           CURRENT_STATUS=$(curl -s \
@@ -121,11 +112,10 @@ jobs:
           # Wait for JIRA to reflect the new status before fetching next transitions
           sleep 3
 
-      - name: Get transition ID for 'Code Review'
+      - name: Get transition ID for 'PR Submitted'
         id: get_transition
-        if: steps.jira.outputs.issue_key != ''
         run: |
-          ISSUE_KEY="${{ steps.jira.outputs.issue_key }}"
+          ISSUE_KEY="${{ needs.extract-jira-key.outputs.issue_key }}"
 
           RESPONSE=$(curl -s \
             -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
@@ -136,20 +126,19 @@ jobs:
             jq -r '.transitions[] | select(.name | ascii_downcase == "pr submitted") | .id')
 
           if [ -z "$TRANSITION_ID" ]; then
-            echo "Transition 'Code Review' not found. Available transitions:"
+            echo "Transition 'PR Submitted' not found. Available transitions:"
             echo "$RESPONSE" | jq '[.transitions[] | {id, name}]'
             exit 1
           fi
 
           echo "transition_id=$TRANSITION_ID" >> $GITHUB_OUTPUT
 
-      - name: Transition JIRA issue to 'Code Review'
-        if: steps.jira.outputs.issue_key != '' && steps.get_transition.outputs.transition_id != ''
+      - name: Transition JIRA issue to 'PR Submitted'
         run: |
           curl -s -o /dev/null -w "%{http_code}" \
             -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
             -H "Content-Type: application/json" \
             -X POST \
             -d "{\"transition\": {\"id\": \"${{ steps.get_transition.outputs.transition_id }}\"}}" \
-            "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/${{ steps.jira.outputs.issue_key }}/transitions" \
-          | grep -qE '^2' && echo "Successfully transitioned ${{ steps.jira.outputs.issue_key }} to Code Review" || exit 1
+            "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/${{ needs.extract-jira-key.outputs.issue_key }}/transitions" \
+          | grep -qE '^2' && echo "Successfully transitioned ${{ needs.extract-jira-key.outputs.issue_key }} to PR Submitted" || exit 1
