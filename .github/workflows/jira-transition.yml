@@ -118,6 +118,9 @@ jobs:
             "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
           | grep -qE '^2' && echo "Transitioned to In Progress" || exit 1
 
+          # Wait for JIRA to reflect the new status before fetching next transitions
+          sleep 3
+
       - name: Get transition ID for 'Code Review'
         id: get_transition
         if: steps.jira.outputs.issue_key != ''
