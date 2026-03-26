@@ -41,9 +41,9 @@ jobs:
             echo "Processing $ISSUE_KEY..."
 
             RESPONSE=$(curl -s \
-              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
-              "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/$ISSUE_KEY/transitions")
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
 
             TRANSITION_ID=$(echo "$RESPONSE" | \
               jq -r '.transitions[] | select(.name | ascii_downcase == "pending later deployment") | .id')
@@ -55,11 +55,11 @@ jobs:
             fi
 
             curl -s -o /dev/null -w "%{http_code}" \
-              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
               -X POST \
               -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
-              "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
             | grep -qE '^2' && echo "Successfully transitioned $ISSUE_KEY" || exit 1
           done
 
@@ -78,9 +78,9 @@ jobs:
 
             # Get current status
             CURRENT_STATUS=$(curl -s \
-              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
-              "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/$ISSUE_KEY?fields=status" \
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY?fields=status" \
               | jq -r '.fields.status.name | ascii_downcase')
 
             echo "Current status: $CURRENT_STATUS"
@@ -105,7 +105,7 @@ jobs:
                 -H "Content-Type: application/json" \
                 -X POST \
                 -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
-                "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
+                "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
               | grep -qE '^2' && echo "Transitioned $ISSUE_KEY to In Progress" || exit 1
 
               # Wait for JIRA to reflect the new status before fetching next transitions
@@ -113,9 +113,9 @@ jobs:
             fi
 
             RESPONSE=$(curl -s \
-              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
-              "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/$ISSUE_KEY/transitions")
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
 
             TRANSITION_ID=$(echo "$RESPONSE" | \
               jq -r '.transitions[] | select(.name | ascii_downcase == "pr submitted") | .id')
@@ -127,10 +127,10 @@ jobs:
             fi
 
             curl -s -o /dev/null -w "%{http_code}" \
-              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
               -H "Content-Type: application/json" \
               -X POST \
               -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
-              "https://${{ secrets.JIRA_DOMAIN }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
             | grep -qE '^2' && echo "Successfully transitioned $ISSUE_KEY to PR Submitted" || exit 1
           done
