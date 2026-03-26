@@ -1,0 +1,143 @@
+name: JIRA - Transition on PR Events
+
+on:
+  pull_request:
+    types: [closed, opened]
+
+jobs:
+  extract-jira-keys:
+    runs-on: ubuntu-latest
+    outputs:
+      issue_keys: ${{ steps.jira.outputs.issue_keys }}
+
+    steps:
+      - name: Extract JIRA issue keys
+        id: jira
+        run: |
+          # Looks for all JIRA keys (e.g. PROJ-123) in the PR title and branch name
+          TEXT="${{ github.event.pull_request.title }} ${{ github.event.pull_request.head.ref }}"
+          ISSUE_KEYS=$(echo "$TEXT" | grep -oE '[A-Z]+-[0-9]+' | sort -u | jq -Rsc 'split("\n") | map(select(length > 0))')
+
+          if [ "$ISSUE_KEYS" = "[]" ]; then
+            echo "No JIRA issue keys found in PR title or branch name. Skipping."
+            echo "issue_keys=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Found issue keys: $ISSUE_KEYS"
+          echo "issue_keys=$ISSUE_KEYS" >> $GITHUB_OUTPUT
+
+  transition-to-pending-later-deployment:
+    needs: extract-jira-keys
+    if: github.event.pull_request.merged == true && needs.extract-jira-keys.outputs.issue_keys != '[]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Transition issues to 'Pending Later Deployment'
+        run: |
+          ISSUE_KEYS='${{ needs.extract-jira-keys.outputs.issue_keys }}'
+
+          echo "$ISSUE_KEYS" | jq -r '.[]' | while read -r ISSUE_KEY; do
+            echo "Processing $ISSUE_KEY..."
+
+            RESPONSE=$(curl -s \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
+
+            TRANSITION_ID=$(echo "$RESPONSE" | \
+              jq -r '.transitions[] | select(.name | ascii_downcase == "pending later deployment") | .id')
+
+            if [ -z "$TRANSITION_ID" ]; then
+              echo "Transition 'Pending Later Deployment' not found for $ISSUE_KEY. Available transitions:"
+              echo "$RESPONSE" | jq '[.transitions[] | {id, name}]'
+              exit 1
+            fi
+
+            curl -s -o /dev/null -w "%{http_code}" \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -X POST \
+              -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
+            | grep -qE '^2' && echo "Successfully transitioned $ISSUE_KEY" || exit 1
+          done
+
+  transition-to-pr-submitted:
+    needs: extract-jira-keys
+    if: github.event.action == 'opened' && needs.extract-jira-keys.outputs.issue_keys != '[]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Transition issues to 'In Progress' if needed, then 'PR Submitted'
+        run: |
+          ISSUE_KEYS='${{ needs.extract-jira-keys.outputs.issue_keys }}'
+
+          echo "$ISSUE_KEYS" | jq -r '.[]' | while read -r ISSUE_KEY; do
+            echo "Processing $ISSUE_KEY..."
+
+            # Get current status
+            STATUS_RESPONSE=$(curl -s \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY?fields=status")
+
+            echo "Status response: $STATUS_RESPONSE"
+
+            CURRENT_STATUS=$(echo "$STATUS_RESPONSE" | jq -r '(.fields.status.name // "") | ascii_downcase')
+
+            echo "Current status: $CURRENT_STATUS"
+
+            if [ "$CURRENT_STATUS" != "in progress" ]; then
+              RESPONSE=$(curl -s \
+                -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+                -H "Content-Type: application/json" \
+                "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
+
+              echo "Transitions response: $RESPONSE"
+
+              TRANSITION_ID=$(echo "$RESPONSE" | \
+                jq -r '.transitions[] | select((.name // "") | ascii_downcase == "in progress") | .id')
+
+              if [ -z "$TRANSITION_ID" ]; then
+                echo "Transition 'In Progress' not found for $ISSUE_KEY. Available transitions:"
+                echo "$RESPONSE" | jq '[.transitions[] | {id, name}]'
+                exit 1
+              fi
+
+              curl -s -o /dev/null -w "%{http_code}" \
+                -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+                -H "Content-Type: application/json" \
+                -X POST \
+                -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
+                "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
+              | grep -qE '^2' && echo "Transitioned $ISSUE_KEY to In Progress" || exit 1
+
+              # Wait for JIRA to reflect the new status before fetching next transitions
+              sleep 3
+            fi
+
+            RESPONSE=$(curl -s \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions")
+
+            echo "Transitions response: $RESPONSE"
+
+            TRANSITION_ID=$(echo "$RESPONSE" | \
+              jq -r '.transitions[] | select((.name // "") | ascii_downcase == "pr submitted") | .id')
+
+            if [ -z "$TRANSITION_ID" ]; then
+              echo "Transition 'PR Submitted' not found for $ISSUE_KEY. Available transitions:"
+              echo "$RESPONSE" | jq '[.transitions[] | {id, name}]'
+              exit 1
+            fi
+
+            curl -s -o /dev/null -w "%{http_code}" \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              -X POST \
+              -d "{\"transition\": {\"id\": \"$TRANSITION_ID\"}}" \
+              "https://api.atlassian.com/ex/jira/${{ secrets.JIRA_CLOUD_ID }}/rest/api/3/issue/$ISSUE_KEY/transitions" \
+            | grep -qE '^2' && echo "Successfully transitioned $ISSUE_KEY to PR Submitted" || exit 1
+          done
